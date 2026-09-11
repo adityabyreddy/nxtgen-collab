@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · Issues{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h4 class="mb-1">{{ project.name }} <span class="text-secondary fw-normal">/ JIRA issues</span></h4>
+        <p class="text-secondary mb-0">
+            {% if project.jira_project_url %}
+            <a class="repo-url" href="{{ project.jira_project_url }}" target="_blank" rel="noopener noreferrer">{{ project.jira_project_url }}</a>
+            {% else %}No JIRA project URL configured for this project.{% endif %}
+        </p>
+    </div>
+    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary btn-sm">Back to project</a>
+</div>
+
+<div id="issues-loading" class="text-secondary">Loading issues…</div>
+<div id="issues-error" class="alert alert-danger d-none" role="alert"></div>
+
+<div class="card d-none" id="issues-card">
+    <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+        <span>Issues</span>
+        <span class="text-secondary fw-normal" id="issues-count"></span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Assignee</th>
+                    <th>Reporter</th>
+                </tr>
+            </thead>
+            <tbody id="issues-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const priorityBadge = (priority) => {
+    const p = (priority || '').toLowerCase();
+    if (p.includes('high') || p.includes('urgent') || p.includes('blocker')) return 'bg-danger';
+    if (p.includes('medium')) return 'bg-warning text-dark';
+    if (p.includes('low')) return 'bg-success';
+    return 'bg-secondary';
+};
+
+async function loadIssues() {
+    const loading = document.getElementById('issues-loading');
+    const errorBox = document.getElementById('issues-error');
+    const card = document.getElementById('issues-card');
+    const body = document.getElementById('issues-body');
+    const count = document.getElementById('issues-count');
+
+    try {
+        const res = await fetch('/api/projects/{{ project.id }}/issues');
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.detail || `Request failed with status ${res.status}`);
+        }
+        const issues = await res.json();
+        loading.classList.add('d-none');
+
+        if (issues.length === 0) {
+            errorBox.textContent = 'No issues found for this project.';
+            errorBox.classList.remove('d-none', 'alert-danger');
+            errorBox.classList.add('alert-secondary');
+            return;
+        }
+
+        count.textContent = `${issues.length} issue${issues.length === 1 ? '' : 's'}`;
+        body.innerHTML = issues.map(issue => `
+            <tr>
+                <td><a href="${issue.url}" target="_blank" rel="noopener noreferrer" class="repo-url">${issue.key}</a></td>
+                <td>${issue.title}</td>
+                <td><span class="badge bg-secondary-subtle text-secondary-emphasis border">${issue.status}</span></td>
+                <td><span class="badge ${priorityBadge(issue.priority)}">${issue.priority}</span></td>
+                <td>${issue.assignee}</td>
+                <td>${issue.reporter}</td>
+            </tr>
+        `).join('');
+        card.classList.remove('d-none');
+    } catch (err) {
+        loading.classList.add('d-none');
+        errorBox.textContent = err.message;
+        errorBox.classList.remove('d-none');
+    }
+}
+
+loadIssues();
+</script>
+{% endblock %}

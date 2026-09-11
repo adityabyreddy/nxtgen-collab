@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if mode == "edit" else "New" }} project · NxtGen Collab{% endblock %}
+{% block content %}
+<h4 class="mb-3">{{ "Edit project" if mode == "edit" else "Create a new project" }}</h4>
+<div class="card">
+    <div class="card-body">
+        <form method="post" action="{{ ('/projects/' ~ project.id ~ '/edit') if mode == 'edit' else '/projects/new' }}">
+            <div class="mb-3">
+                <label class="form-label">Project name</label>
+                <input type="text" class="form-control" name="name" required value="{{ project.name if project else '' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" name="description" rows="2">{{ project.description if project else '' }}</textarea>
+            </div>
+            <div class="row">
+                <div class="mb-3 col-md-6">
+                    <label class="form-label">Git repo URL</label>
+                    <input type="url" class="form-control" name="git_repo_url" value="{{ project.git_repo_url if project else '' }}">
+                </div>
+                <div class="mb-3 col-md-6">
+                    <label class="form-label">JIRA project URL</label>
+                    <input type="url" class="form-control" name="jira_project_url" value="{{ project.jira_project_url if project else '' }}">
+                </div>
+            </div>
+
+            <hr>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">Contributors</label>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="add-contributor">+ Add contributor</button>
+            </div>
+            <div id="contributor-rows">
+                {% if project and project.contributors %}
+                    {% for c in project.contributors %}
+                    <div class="row g-2 mb-2 contributor-row">
+                        <div class="col-md-7">
+                            <input type="text" class="form-control" name="contributor_name" placeholder="Name" value="{{ c.name }}">
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select" name="contributor_role">
+                                {% for role in roles %}
+                                <option value="{{ role }}" {{ "selected" if role == c.role else "" }}>{{ role }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-outline-danger remove-contributor">&times;</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <template id="contributor-row-template">
+                <div class="row g-2 mb-2 contributor-row">
+                    <div class="col-md-7">
+                        <input type="text" class="form-control" name="contributor_name" placeholder="Name">
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" name="contributor_role">
+                            {% for role in roles %}
+                            <option value="{{ role }}">{{ role }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-outline-danger remove-contributor">&times;</button>
+                    </div>
+                </div>
+            </template>
+
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-github">{{ "Save changes" if mode == "edit" else "Create project" }}</button>
+                <a href="{{ ('/projects/' ~ project.id) if mode == 'edit' else '/' }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('add-contributor').addEventListener('click', function () {
+    const template = document.getElementById('contributor-row-template');
+    const clone = template.content.cloneNode(true);
+    document.getElementById('contributor-rows').appendChild(clone);
+});
+
+document.getElementById('contributor-rows').addEventListener('click', function (e) {
+    if (e.target.classList.contains('remove-contributor')) {
+        e.target.closest('.contributor-row').remove();
+    }
+});
+</script>
+{% endblock %}
