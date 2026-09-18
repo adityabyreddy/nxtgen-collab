@@ -48,3 +48,6 @@ class JiraIssue(BaseModel):
     status: str
     url: str
 
+class JiraAssigneeUpdate(BaseModel):
+    account_id: str
+

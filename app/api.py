@@ -1,7 +1,13 @@
 from fastapi import APIRouter, HTTPException
 
 from app import db, jira_client
-from app.models import JiraIssue, Project, ProjectCreate, ProjectUpdate
+from app.models import (
+    JiraIssue,
+    JiraAssigneeUpdate,
+    Project,
+    ProjectCreate,
+    ProjectUpdate,
+)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -49,3 +55,118 @@ def get_project_issues(project_id: int) -> list[JiraIssue]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except jira_client.JiraApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+@router.get("/{project_id}/issues/{issue_key}/assignees")
+def get_issue_assignees(
+    project_id: int,
+    issue_key: str,
+) -> list[dict]:
+    project = db.get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    try:
+        server_url = jira_client.parse_server_url(
+            project.jira_project_url
+        )
+
+        return jira_client.fetch_assignable_users(
+            issue_key,
+            server_url,
+        )
+
+    except jira_client.JiraConfigError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except jira_client.JiraApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+
+@router.put("/{project_id}/issues/{issue_key}/assignee")
+def update_issue_assignee(
+    project_id: int,
+    issue_key: str,
+    payload: JiraAssigneeUpdate,
+        ) -> dict:
+    project = db.get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    try:
+        server_url = jira_client.parse_server_url(
+            project.jira_project_url
+        )
+
+        jira_client.assign_issue(
+            issue_key,
+            payload.account_id,
+            server_url,
+        )
+
+        return {
+            "message": "Issue assigned successfully",
+            "issue_key": issue_key,
+            "account_id": payload.account_id,
+        }
+
+    except jira_client.JiraConfigError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except jira_client.JiraApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+    project = db.get_project(project_id)
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project not found",
+        )
+
+    try:
+        server_url = jira_client.parse_server_url(
+            project.jira_project_url
+        )
+
+        jira_client.assign_issue(
+            issue_key,
+            account_id,
+            server_url,
+        )
+
+        return {
+            "message": "Issue assigned successfully",
+            "issue_key": issue_key,
+            "account_id": account_id,
+        }
+
+    except jira_client.JiraConfigError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except jira_client.JiraApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
