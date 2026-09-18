@@ -12,3 +12,5 @@ wheels/
 
 # App data
 data/
+workers/copilot
+workers/gh
