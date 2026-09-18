@@ -3,24 +3,51 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
-        <h4 class="mb-1">{{ project.name }} <span class="text-secondary fw-normal">/ JIRA issues</span></h4>
+        <h4 class="mb-1">
+            {{ project.name }}
+            <span class="text-secondary fw-normal">/ JIRA issues</span>
+        </h4>
+
         <p class="text-secondary mb-0">
             {% if project.jira_project_url %}
-            <a class="repo-url" href="{{ project.jira_project_url }}" target="_blank" rel="noopener noreferrer">{{ project.jira_project_url }}</a>
-            {% else %}No JIRA project URL configured for this project.{% endif %}
+            <a
+                class="repo-url"
+                href="{{ project.jira_project_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                {{ project.jira_project_url }}
+            </a>
+            {% else %}
+            No JIRA project URL configured for this project.
+            {% endif %}
         </p>
     </div>
-    <a href="/projects/{{ project.id }}" class="btn btn-outline-secondary btn-sm">Back to project</a>
+
+    <a
+        href="/projects/{{ project.id }}"
+        class="btn btn-outline-secondary btn-sm"
+    >
+        Back to project
+    </a>
 </div>
 
-<div id="issues-loading" class="text-secondary">Loading issues…</div>
-<div id="issues-error" class="alert alert-danger d-none" role="alert"></div>
+<div id="issues-loading" class="text-secondary">
+    Loading issues…
+</div>
+
+<div
+    id="issues-error"
+    class="alert alert-danger d-none"
+    role="alert"
+></div>
 
 <div class="card d-none" id="issues-card">
     <div class="card-header bg-white fw-semibold d-flex justify-content-between">
         <span>Issues</span>
         <span class="text-secondary fw-normal" id="issues-count"></span>
     </div>
+
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead>
@@ -33,6 +60,7 @@
                     <th>Reporter</th>
                 </tr>
             </thead>
+
             <tbody id="issues-body"></tbody>
         </table>
     </div>
@@ -41,53 +69,370 @@
 <script>
 const priorityBadge = (priority) => {
     const p = (priority || '').toLowerCase();
-    if (p.includes('high') || p.includes('urgent') || p.includes('blocker')) return 'bg-danger';
-    if (p.includes('medium')) return 'bg-warning text-dark';
-    if (p.includes('low')) return 'bg-success';
+
+    if (
+        p.includes('high') ||
+        p.includes('urgent') ||
+        p.includes('blocker')
+    ) {
+        return 'bg-danger';
+    }
+
+    if (p.includes('medium')) {
+        return 'bg-warning text-dark';
+    }
+
+    if (p.includes('low')) {
+        return 'bg-success';
+    }
+
     return 'bg-secondary';
 };
 
-async function loadIssues() {
-    const loading = document.getElementById('issues-loading');
-    const errorBox = document.getElementById('issues-error');
-    const card = document.getElementById('issues-card');
-    const body = document.getElementById('issues-body');
-    const count = document.getElementById('issues-count');
+
+/*
+ * Load the Jira users who can be assigned to a specific issue.
+ */
+async function loadAssignees(issueKey, button, menu) {
+    menu.innerHTML = `
+        <div class="dropdown-item-text text-secondary">
+            Loading...
+        </div>
+    `;
 
     try {
-        const res = await fetch('/api/projects/{{ project.id }}/issues');
+        const res = await fetch(
+            `/api/projects/{{ project.id }}/issues/${encodeURIComponent(issueKey)}/assignees`
+        );
+
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
-            throw new Error(data.detail || `Request failed with status ${res.status}`);
+            throw new Error(
+                data.detail ||
+                `Failed to load assignees (${res.status})`
+            );
         }
-        const issues = await res.json();
-        loading.classList.add('d-none');
 
-        if (issues.length === 0) {
-            errorBox.textContent = 'No issues found for this project.';
-            errorBox.classList.remove('d-none', 'alert-danger');
-            errorBox.classList.add('alert-secondary');
+        const users = await res.json();
+
+        /*
+         * Jira's special account ID -1 means:
+         * use the project's default/automatic assignee.
+         */
+        menu.innerHTML = `
+            <button
+                type="button"
+                class="dropdown-item"
+                data-account-id="-1"
+                data-display-name="Automatic"
+            >
+                Automatic
+            </button>
+            <div class="dropdown-divider"></div>
+        `;
+
+        if (users.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'dropdown-item-text text-secondary';
+            emptyItem.textContent = 'No assignable users found';
+            menu.appendChild(emptyItem);
             return;
         }
 
-        count.textContent = `${issues.length} issue${issues.length === 1 ? '' : 's'}`;
-        body.innerHTML = issues.map(issue => `
-            <tr>
-                <td><a href="${issue.url}" target="_blank" rel="noopener noreferrer" class="repo-url">${issue.key}</a></td>
-                <td>${issue.title}</td>
-                <td><span class="badge bg-secondary-subtle text-secondary-emphasis border">${issue.status}</span></td>
-                <td><span class="badge ${priorityBadge(issue.priority)}">${issue.priority}</span></td>
-                <td>${issue.assignee}</td>
-                <td>${issue.reporter}</td>
-            </tr>
-        `).join('');
+        users.forEach(user => {
+            const item = document.createElement('button');
+
+            item.type = 'button';
+            item.className = 'dropdown-item';
+            item.dataset.accountId = user.account_id;
+            item.dataset.displayName = user.display_name;
+            item.textContent = user.display_name;
+
+            menu.appendChild(item);
+        });
+
+    } catch (err) {
+        menu.innerHTML = '';
+
+        const errorItem = document.createElement('div');
+        errorItem.className = 'dropdown-item-text text-danger';
+        errorItem.textContent = err.message;
+
+        menu.appendChild(errorItem);
+    }
+}
+
+
+/*
+ * Assign a Jira issue to the selected user.
+ */
+async function assignIssue(issueKey, accountId, displayName, button) {
+    const originalText = button.textContent;
+
+    button.disabled = true;
+    button.textContent = 'Assigning...';
+
+    try {
+        const res = await fetch(
+            `/api/projects/{{ project.id }}/issues/${encodeURIComponent(issueKey)}/assignee`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    account_id: accountId
+                })
+            }
+        );
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+
+            throw new Error(
+                data.detail ||
+                `Assignment failed (${res.status})`
+            );
+        }
+
+        /*
+         * Update the button immediately after successful assignment.
+         */
+        button.textContent = displayName;
+
+    } catch (err) {
+        alert(`Could not assign ${issueKey}: ${err.message}`);
+        button.textContent = originalText;
+
+    } finally {
+        button.disabled = false;
+    }
+}
+
+
+/*
+ * Create the assignee dropdown for an issue.
+ */
+function createAssigneeDropdown(issue) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'dropdown';
+
+    const button = document.createElement('button');
+
+    button.type = 'button';
+    button.className =
+        'btn btn-sm btn-outline-secondary dropdown-toggle';
+    button.setAttribute('data-bs-toggle', 'dropdown');
+    button.setAttribute('aria-expanded', 'false');
+    button.textContent = issue.assignee || 'Unassigned';
+
+    const menu = document.createElement('div');
+
+    menu.className =
+        'dropdown-menu dropdown-menu-end shadow-sm';
+
+    /*
+     * Load the assignable users when the dropdown is opened.
+     */
+    button.addEventListener('click', () => {
+        loadAssignees(issue.key, button, menu);
+    });
+
+    /*
+     * Handle a user selection.
+     */
+    menu.addEventListener('click', async (event) => {
+        const item = event.target.closest(
+            '[data-account-id]'
+        );
+
+        if (!item) {
+            return;
+        }
+
+        const accountId = item.dataset.accountId;
+        const displayName = item.dataset.displayName;
+
+        await assignIssue(
+            issue.key,
+            accountId,
+            displayName,
+            button
+        );
+    });
+
+    wrapper.appendChild(button);
+    wrapper.appendChild(menu);
+
+    return wrapper;
+}
+
+
+/*
+ * Load all Jira issues.
+ */
+async function loadIssues() {
+    const loading =
+        document.getElementById('issues-loading');
+
+    const errorBox =
+        document.getElementById('issues-error');
+
+    const card =
+        document.getElementById('issues-card');
+
+    const body =
+        document.getElementById('issues-body');
+
+    const count =
+        document.getElementById('issues-count');
+
+    try {
+        const res = await fetch(
+            '/api/projects/{{ project.id }}/issues'
+        );
+
+        if (!res.ok) {
+            const data =
+                await res.json().catch(() => ({}));
+
+            throw new Error(
+                data.detail ||
+                `Request failed with status ${res.status}`
+            );
+        }
+
+        const issues = await res.json();
+
+        loading.classList.add('d-none');
+
+        if (issues.length === 0) {
+            errorBox.textContent =
+                'No issues found for this project.';
+
+            errorBox.classList.remove(
+                'd-none',
+                'alert-danger'
+            );
+
+            errorBox.classList.add(
+                'alert-secondary'
+            );
+
+            return;
+        }
+
+        count.textContent =
+            `${issues.length} issue${
+                issues.length === 1 ? '' : 's'
+            }`;
+
+        /*
+         * Build table rows using DOM APIs instead of
+         * inserting Jira user names directly into HTML.
+         */
+        body.innerHTML = '';
+
+        issues.forEach(issue => {
+            const row = document.createElement('tr');
+
+            /*
+             * Key
+             */
+            const keyCell = document.createElement('td');
+
+            const keyLink = document.createElement('a');
+
+            keyLink.href = issue.url;
+            keyLink.target = '_blank';
+            keyLink.rel = 'noopener noreferrer';
+            keyLink.className = 'repo-url';
+            keyLink.textContent = issue.key;
+
+            keyCell.appendChild(keyLink);
+
+            /*
+             * Title
+             */
+            const titleCell = document.createElement('td');
+            titleCell.textContent = issue.title;
+
+            /*
+             * Status
+             */
+            const statusCell = document.createElement('td');
+
+            const statusBadge =
+                document.createElement('span');
+
+            statusBadge.className =
+                'badge bg-secondary-subtle text-secondary-emphasis border';
+
+            statusBadge.textContent =
+                issue.status;
+
+            statusCell.appendChild(statusBadge);
+
+            /*
+             * Priority
+             */
+            const priorityCell =
+                document.createElement('td');
+
+            const priorityBadgeElement =
+                document.createElement('span');
+
+            priorityBadgeElement.className =
+                `badge ${priorityBadge(issue.priority)}`;
+
+            priorityBadgeElement.textContent =
+                issue.priority;
+
+            priorityCell.appendChild(
+                priorityBadgeElement
+            );
+
+            /*
+             * Assignee
+             */
+            const assigneeCell =
+                document.createElement('td');
+
+            assigneeCell.appendChild(
+                createAssigneeDropdown(issue)
+            );
+
+            /*
+             * Reporter
+             */
+            const reporterCell =
+                document.createElement('td');
+
+            reporterCell.textContent =
+                issue.reporter;
+
+            row.appendChild(keyCell);
+            row.appendChild(titleCell);
+            row.appendChild(statusCell);
+            row.appendChild(priorityCell);
+            row.appendChild(assigneeCell);
+            row.appendChild(reporterCell);
+
+            body.appendChild(row);
+        });
+
         card.classList.remove('d-none');
+
     } catch (err) {
         loading.classList.add('d-none');
-        errorBox.textContent = err.message;
+
+        errorBox.textContent =
+            err.message;
+
         errorBox.classList.remove('d-none');
     }
 }
+
 
 loadIssues();
 </script>

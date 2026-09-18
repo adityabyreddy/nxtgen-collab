@@ -3,9 +3,14 @@ import re
 from functools import lru_cache
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
+
+import requests
+
 from jira import JIRA
 from jira.exceptions import JIRAError
 
+load_dotenv()
 
 class JiraConfigError(Exception):
     """Raised when a project's JIRA URL or credentials are missing/invalid."""
@@ -100,3 +105,84 @@ def fetch_project_issues(jira_project_url: str) -> list[dict]:
         raise JiraApiError(f"JIRA API request failed: {exc.text or exc}") from exc
 
     return [_serialize_issue(issue, server_url) for issue in issues]
+
+def fetch_assignable_users(
+    issue_key: str,
+    server_url: str,
+) -> list[dict]:
+    """Return Jira users who can be assigned to the given issue."""
+
+    token = os.environ.get("JIRA_API_TOKEN")
+    email = os.environ.get("JIRA_EMAIL")
+
+    if not token:
+        raise JiraConfigError(
+            "JIRA_API_TOKEN environment variable is not set"
+        )
+
+    if _is_cloud(server_url) and not email:
+        raise JiraConfigError(
+            "JIRA_EMAIL environment variable is required to authenticate with Jira Cloud"
+        )
+
+    url = f"{server_url}/rest/api/3/user/assignable/search"
+
+    try:
+        response = requests.get(
+            url,
+            params={
+                "issueKey": issue_key,
+                "maxResults": 100,
+            },
+            auth=(email, token),
+            headers={
+                "Accept": "application/json",
+            },
+            timeout=30,
+        )
+
+        response.raise_for_status()
+
+    except requests.RequestException as exc:
+        detail = str(exc)
+
+        if getattr(exc, "response", None) is not None:
+            detail = (
+                exc.response.text
+                or str(exc)
+            )
+
+        raise JiraApiError(
+            f"Jira API request failed: {detail}"
+        ) from exc
+
+    users = response.json()
+
+    return [
+        {
+            "account_id": user.get("accountId"),
+            "display_name": user.get("displayName"),
+        }
+        for user in users
+        if user.get("accountId")
+        and user.get("displayName")
+    ]
+def assign_issue(
+    issue_key: str,
+    account_id: str,
+    server_url: str,
+) -> None:
+    """Assign a Jira issue to a user."""
+
+    try:
+        client = _client_for(server_url)
+
+        client.assign_issue(
+            issue_key,
+            account_id,
+        )
+
+    except JIRAError as exc:
+        raise JiraApiError(
+            f"JIRA API request failed: {exc.text or exc}"
+        ) from exc
