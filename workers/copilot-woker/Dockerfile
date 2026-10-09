@@ -13,9 +13,8 @@ COPY gh /bin/
 
 COPY copilot /bin/
 
-COPY run.sh /opt/run.sh
+COPY copilot-woker/run.sh /opt/run.sh
 
-COPY task.json /opt/task.json
 
 RUN chmod +x /opt/run.sh && \
     chmod +x /bin/gh && \

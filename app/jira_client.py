@@ -186,3 +186,45 @@ def assign_issue(
         raise JiraApiError(
             f"JIRA API request failed: {exc.text or exc}"
         ) from exc
+
+def transition_issue(
+    issue_key: str,
+    transition_name: str,
+    server_url: str,
+) -> None:
+    """Transition a Jira issue to the requested workflow status."""
+
+    try:
+        client = _client_for(server_url)
+
+        transitions = client.transitions(issue_key)
+
+        transition = next(
+            (
+                item
+                for item in transitions
+                if item["name"].strip().lower()
+                == transition_name.strip().lower()
+            ),
+            None,
+        )
+
+        if transition is None:
+            available = ", ".join(
+                item["name"] for item in transitions
+            )
+
+            raise JiraApiError(
+                f"JIRA transition '{transition_name}' was not found "
+                f"for {issue_key}. Available transitions: {available}"
+            )
+
+        client.transition_issue(
+            issue_key,
+            transition["id"],
+        )
+
+    except JIRAError as exc:
+        raise JiraApiError(
+            f"JIRA API request failed: {exc.text or exc}"
+        ) from exc

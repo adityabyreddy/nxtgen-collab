@@ -12,3 +12,10 @@ docker-container:
     - git push -u origin feat/task-<id>
 # create a pull request
     - gh pr create --title "Add footer to all the webpages" --body "This PR adds a footer to all the webpages." --base main --head feat/task-<id>
+
+
+1. Worker lifecycle + database tracking
+2. Automatic test execution
+3. AI self-correction loop
+4. Secure GitHub webhook
+5. AI QA/Code Reviewer
